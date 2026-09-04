@@ -1,0 +1,14 @@
+C:\Users\JariasT\IdeaProjects\LectureCLI\target\release\deps\serde-2a859d909fbd13e4.d: C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\JariasT\IdeaProjects\LectureCLI\target\release\build\serde-6c6aa03c174ea981\out/private.rs
+
+C:\Users\JariasT\IdeaProjects\LectureCLI\target\release\deps\libserde-2a859d909fbd13e4.rlib: C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\JariasT\IdeaProjects\LectureCLI\target\release\build\serde-6c6aa03c174ea981\out/private.rs
+
+C:\Users\JariasT\IdeaProjects\LectureCLI\target\release\deps\libserde-2a859d909fbd13e4.rmeta: C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\JariasT\IdeaProjects\LectureCLI\target\release\build\serde-6c6aa03c174ea981\out/private.rs
+
+C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs:
+C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs:
+C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs:
+C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs:
+C:\Users\JariasT\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs:
+C:\Users\JariasT\IdeaProjects\LectureCLI\target\release\build\serde-6c6aa03c174ea981\out/private.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\JariasT\\IdeaProjects\\LectureCLI\\target\\release\\build\\serde-6c6aa03c174ea981\\out

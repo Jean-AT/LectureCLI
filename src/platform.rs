@@ -26,7 +26,7 @@ pub fn discover_audio_sources(ffmpeg_bin: &Path) -> Result<Vec<AudioSource>> {
         discover_unix_sources()?
     };
 
-    if sources.is_empty() {
+    if sources.is_empty() && !cfg!(target_os = "windows") {
         sources.push(AudioSource {
             id: 1,
             application: if cfg!(target_os = "windows") {
@@ -90,6 +90,7 @@ pub fn build_ffmpeg_capture_command(
     source: &AudioSource,
     sample_rate: u32,
     channels: u16,
+    input_gain: f32,
 ) -> Command {
     let mut command = Command::new(ffmpeg_bin);
     command
@@ -98,12 +99,18 @@ pub fn build_ffmpeg_capture_command(
         .arg("error")
         .arg("-nostdin");
 
-    if cfg!(target_os = "windows") {
+    if cfg!(target_os = "windows") && source.backend == "wasapi" {
         command
             .arg("-f")
             .arg("wasapi")
             .arg("-loopback")
             .arg("1")
+            .arg("-i")
+            .arg(&source.capture_spec);
+    } else if cfg!(target_os = "windows") && source.backend == "dshow" {
+        command
+            .arg("-f")
+            .arg("dshow")
             .arg("-i")
             .arg(&source.capture_spec);
     } else {
@@ -119,6 +126,8 @@ pub fn build_ffmpeg_capture_command(
         .arg(channels.to_string())
         .arg("-ar")
         .arg(sample_rate.to_string())
+        .arg("-af")
+        .arg(format!("volume={input_gain}"))
         .arg("-f")
         .arg("s16le")
         .arg("pipe:1")
@@ -183,6 +192,26 @@ fn parse_pactl_sources(stdout: &[u8]) -> Result<Vec<AudioSource>> {
 }
 
 fn discover_windows_sources(ffmpeg_bin: &Path) -> Result<Vec<AudioSource>> {
+    if ffmpeg_supports_input_format(ffmpeg_bin, "wasapi")? {
+        let sources = discover_windows_wasapi_sources(ffmpeg_bin)?;
+        if !sources.is_empty() {
+            return Ok(sources);
+        }
+    }
+
+    if ffmpeg_supports_input_format(ffmpeg_bin, "dshow")? {
+        let sources = discover_windows_dshow_sources(ffmpeg_bin)?;
+        if !sources.is_empty() {
+            return Ok(sources);
+        }
+    }
+
+    Err(anyhow!(
+        "no Windows audio capture devices were found for LectureCLI. Run `ffmpeg -list_devices true -f dshow -i dummy` to inspect what FFmpeg can see on this machine."
+    ))
+}
+
+fn discover_windows_wasapi_sources(ffmpeg_bin: &Path) -> Result<Vec<AudioSource>> {
     let output = Command::new(ffmpeg_bin)
         .arg("-hide_banner")
         .arg("-list_devices")
@@ -194,21 +223,13 @@ fn discover_windows_sources(ffmpeg_bin: &Path) -> Result<Vec<AudioSource>> {
         .output()
         .context("failed to invoke ffmpeg for WASAPI device discovery")?;
 
-    let text = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
+    let text = combined_output(&output.stdout, &output.stderr);
     let mut sources = Vec::new();
+
     for line in text.lines() {
-        let Some(start) = line.find('"') else {
+        let Some(name) = quoted_name(line) else {
             continue;
         };
-        let Some(end) = line[start + 1..].find('"') else {
-            continue;
-        };
-        let name = line[start + 1..start + 1 + end].trim();
         if name.is_empty() || name.eq_ignore_ascii_case("default") {
             continue;
         }
@@ -230,4 +251,85 @@ fn discover_windows_sources(ffmpeg_bin: &Path) -> Result<Vec<AudioSource>> {
     }
 
     Ok(sources)
+}
+
+fn discover_windows_dshow_sources(ffmpeg_bin: &Path) -> Result<Vec<AudioSource>> {
+    let output = Command::new(ffmpeg_bin)
+        .arg("-hide_banner")
+        .arg("-list_devices")
+        .arg("true")
+        .arg("-f")
+        .arg("dshow")
+        .arg("-i")
+        .arg("dummy")
+        .output()
+        .context("failed to invoke ffmpeg for DirectShow device discovery")?;
+
+    let text = combined_output(&output.stdout, &output.stderr);
+    let mut sources = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        let Some(name) = quoted_name(line) else {
+            continue;
+        };
+        if !trimmed.contains("(audio)") {
+            continue;
+        }
+
+        let lowered = name.to_lowercase();
+        let application = if lowered.contains("stereo mix") {
+            "DirectShow stereo mix".to_string()
+        } else if lowered.contains("mezcla estéreo") || lowered.contains("mezcla estereo") {
+            "DirectShow stereo mix".to_string()
+        } else if lowered.contains("wave out") || lowered.contains("what u hear") {
+            "DirectShow loopback-like".to_string()
+        } else {
+            "DirectShow audio".to_string()
+        };
+
+        sources.push(AudioSource {
+            id: 0,
+            application,
+            stream: name.to_string(),
+            capture_spec: format!("audio={name}"),
+            backend: "dshow".to_string(),
+        });
+    }
+
+    if !output.status.success() && sources.is_empty() {
+        return Err(anyhow!(
+            "ffmpeg failed while listing DirectShow audio devices: {}",
+            text
+        ));
+    }
+
+    Ok(sources)
+}
+
+fn ffmpeg_supports_input_format(ffmpeg_bin: &Path, format: &str) -> Result<bool> {
+    let output = Command::new(ffmpeg_bin)
+        .arg("-hide_banner")
+        .arg("-devices")
+        .output()
+        .with_context(|| format!("failed to invoke ffmpeg to inspect input devices for '{format}'"))?;
+
+    let text = combined_output(&output.stdout, &output.stderr);
+    Ok(text
+        .lines()
+        .any(|line| line.trim_start().starts_with("D") && line.contains(format)))
+}
+
+fn combined_output(stdout: &[u8], stderr: &[u8]) -> String {
+    format!(
+        "{}\n{}",
+        String::from_utf8_lossy(stdout),
+        String::from_utf8_lossy(stderr)
+    )
+}
+
+fn quoted_name(line: &str) -> Option<&str> {
+    let start = line.find('"')?;
+    let end = line[start + 1..].find('"')?;
+    Some(line[start + 1..start + 1 + end].trim())
 }

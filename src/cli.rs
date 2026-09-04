@@ -78,9 +78,13 @@ fn parse_start_args(args: Vec<String>) -> Result<StartConfig> {
     let mut model_path = PathBuf::new();
     let mut language = "es".to_string();
     let mut threads = default_threads;
+    let mut no_speech_threshold = 0.95f32;
     let mut chunk_seconds = 20u64;
+    let mut input_gain = if cfg!(target_os = "windows") { 6.0f32 } else { 1.0f32 };
+    let mut keep_chunks = false;
     let mut output_root = PathBuf::from("sessions");
     let mut record_audio = false;
+    let mut silence_threshold = if cfg!(target_os = "windows") { 120 } else { 500 };
     let mut title = None;
     let mut ffmpeg_bin = PathBuf::from("ffmpeg");
     let mut whisper_bin = default_whisper_bin();
@@ -100,13 +104,29 @@ fn parse_start_args(args: Vec<String>) -> Result<StartConfig> {
                     .parse()
                     .with_context(|| "threads must be a positive integer")?;
             }
+            "--no-speech-threshold" => {
+                no_speech_threshold = next_value(&mut iter, "--no-speech-threshold")?
+                    .parse()
+                    .with_context(|| "no speech threshold must be a number")?;
+            }
             "--chunk-size" => {
                 chunk_seconds = next_value(&mut iter, "--chunk-size")?
                     .parse()
                     .with_context(|| "chunk size must be an integer number of seconds")?;
             }
+            "--input-gain" => {
+                input_gain = next_value(&mut iter, "--input-gain")?
+                    .parse()
+                    .with_context(|| "input gain must be a number")?;
+            }
+            "--keep-chunks" => keep_chunks = true,
             "--output" => output_root = PathBuf::from(next_value(&mut iter, "--output")?),
             "--record" => record_audio = true,
+            "--silence-threshold" => {
+                silence_threshold = next_value(&mut iter, "--silence-threshold")?
+                    .parse()
+                    .with_context(|| "silence threshold must be an integer")?;
+            }
             "--title" => title = Some(next_value(&mut iter, "--title")?),
             "--ffmpeg-bin" => ffmpeg_bin = PathBuf::from(next_value(&mut iter, "--ffmpeg-bin")?),
             "--whisper-bin" => whisper_bin = PathBuf::from(next_value(&mut iter, "--whisper-bin")?),
@@ -159,9 +179,13 @@ fn parse_start_args(args: Vec<String>) -> Result<StartConfig> {
         language,
         quality,
         threads,
+        no_speech_threshold,
         chunk_seconds,
+        input_gain,
+        keep_chunks,
         output_root,
         record_audio,
+        silence_threshold,
         title,
         source_query,
     })
@@ -186,10 +210,7 @@ fn default_whisper_bin() -> PathBuf {
 
     if let Ok(dir) = env::var("LECTURE_WHISPER_CPP_DIR") {
         let base = PathBuf::from(dir);
-        let candidates = [
-            base.join("build/bin/whisper-cli"),
-            base.join("build/bin/Release/whisper-cli.exe"),
-        ];
+        let candidates = whisper_bin_candidates(&base);
 
         for candidate in candidates {
             if candidate.exists() {
@@ -199,21 +220,32 @@ fn default_whisper_bin() -> PathBuf {
     }
 
     if let Ok(cwd) = env::current_dir() {
-        let candidate = cwd.join("../whisper.cpp/build/bin/whisper-cli");
-        if candidate.exists() {
-            return candidate;
-        }
-        let candidate = cwd.join("../../whisper.cpp/build/bin/whisper-cli");
-        if candidate.exists() {
-            return candidate;
-        }
-        let candidate = cwd.join("../whisper.cpp/build/bin/Release/whisper-cli.exe");
-        if candidate.exists() {
-            return candidate;
+        for relative in ["../whisper.cpp", "../../whisper.cpp"] {
+            let base = cwd.join(relative);
+            for candidate in whisper_bin_candidates(&base) {
+                if candidate.exists() {
+                    return candidate;
+                }
+            }
         }
     }
 
-    PathBuf::from("whisper-cli")
+    if cfg!(target_os = "windows") {
+        PathBuf::from("whisper-cli.exe")
+    } else {
+        PathBuf::from("whisper-cli")
+    }
+}
+
+fn whisper_bin_candidates(base: &Path) -> Vec<PathBuf> {
+    vec![
+        base.join("build/bin/whisper-cli"),
+        base.join("build/bin/whisper-cli.exe"),
+        base.join("build/bin/Release/whisper-cli"),
+        base.join("build/bin/Release/whisper-cli.exe"),
+        base.join("build/bin/Debug/whisper-cli"),
+        base.join("build/bin/Debug/whisper-cli.exe"),
+    ]
 }
 
 fn default_model_path(size: &str) -> PathBuf {
@@ -263,6 +295,37 @@ fn default_model_path(size: &str) -> PathBuf {
         let path = Path::new(&candidate).to_path_buf();
         if path.exists() {
             return path;
+        }
+    }
+
+    let cwd_candidates = [
+        PathBuf::from(format!("ggml-{size}.bin")),
+        PathBuf::from(format!("models/ggml-{size}.bin")),
+        PathBuf::from(format!("for-tests-ggml-{size}.bin")),
+    ];
+
+    if let Ok(cwd) = env::current_dir() {
+        for candidate in cwd_candidates {
+            let path = cwd.join(&candidate);
+            if path.exists() {
+                return path;
+            }
+        }
+    }
+
+    let exe_candidates = [
+        format!("ggml-{size}.bin"),
+        format!("models/ggml-{size}.bin"),
+    ];
+
+    if let Ok(exe) = env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            for rel in exe_candidates {
+                let path = exe_dir.join(rel);
+                if path.exists() {
+                    return path;
+                }
+            }
         }
     }
 

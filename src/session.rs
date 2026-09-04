@@ -149,6 +149,12 @@ impl SessionWriter {
         Ok(word_count)
     }
 
+    pub fn append_error_line(&mut self, line: &str) -> Result<()> {
+        writeln!(self.transcript, "> {line}")?;
+        self.transcript.flush()?;
+        Ok(())
+    }
+
     pub fn finish(
         mut self,
         duration_seconds: u64,

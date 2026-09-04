@@ -31,6 +31,32 @@ The current MVP is tuned for:
 
 ## Install
 
+Keep this repo next to a local `whisper.cpp` clone unless you set `WHISPER_CPP_DIR` yourself.
+
+### Windows
+
+Run from PowerShell:
+
+```powershell
+.\install.ps1
+```
+
+That script will:
+
+- install `lecture`
+- build `whisper.cpp` in Release mode if needed
+- download the default Whisper model if needed
+- create a launcher at `%USERPROFILE%\.local\bin\lecture.cmd`
+- add `%USERPROFILE%\.local\bin` and `%USERPROFILE%\.cargo\bin` to your user `PATH`
+
+If PowerShell blocks the script, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+### Linux
+
 If you have this repo next to a local `whisper.cpp` clone, run:
 
 ```bash
@@ -60,6 +86,12 @@ That script will:
 - `ffmpeg`: captures audio and feeds it to Whisper
 - `whisper.cpp`: provides the local transcription binary
 - `ggml-base.bin`: the default Whisper model used by the MVP
+
+### Windows notes
+
+- `ffmpeg` must be available in `PATH`.
+- `whisper.cpp` usually builds `whisper-cli.exe` under `build\bin\Release\`.
+- Device capture uses FFmpeg's WASAPI loopback input.
 
 ## Quick start
 
@@ -106,6 +138,7 @@ sessions/2026-08-30-clase-fisica2/
 
 - On Linux, source discovery uses PipeWire-compatible sources through `ffmpeg`.
 - On Windows, capture uses WASAPI loopback through `ffmpeg`.
+- On Windows, audio source names come from FFmpeg's WASAPI device list.
 - Audio is not stored by default.
 - The transcript stays local.
 

@@ -30,9 +30,13 @@ pub struct StartConfig {
     pub language: String,
     pub quality: String,
     pub threads: usize,
+    pub no_speech_threshold: f32,
     pub chunk_seconds: u64,
+    pub input_gain: f32,
+    pub keep_chunks: bool,
     pub output_root: PathBuf,
     pub record_audio: bool,
+    pub silence_threshold: i16,
     pub title: Option<String>,
     pub source_query: String,
 }
@@ -102,6 +106,8 @@ pub fn run_session(config: StartConfig) -> Result<()> {
         model_path: config.model_path.clone(),
         language: config.language.clone(),
         threads: config.threads,
+        no_speech_threshold: config.no_speech_threshold,
+        keep_artifacts: config.keep_chunks,
     };
 
     validate_whisper_binary(&transcribe_config.whisper_bin)?;
@@ -112,14 +118,21 @@ pub fn run_session(config: StartConfig) -> Result<()> {
         worker_loop(worker_queue, session_writer, transcribe_config, scratch_dir)
     });
 
-    let capture_process = CaptureProcess::spawn(&config.ffmpeg_bin, source, 16_000, 1)?;
-    let (child, mut stdout) = capture_process.into_parts();
+    let capture_process = CaptureProcess::spawn(
+        &config.ffmpeg_bin,
+        source,
+        16_000,
+        1,
+        config.input_gain,
+    )?;
+    let (child, mut stdout, mut stderr) = capture_process.into_parts();
     let child_handle: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(Some(child)));
     let killer = spawn_killer(child_handle.clone());
 
     let frame_ms = 20u64;
     let vad_cfg = VadConfig {
         max_segment_ms: config.chunk_seconds.saturating_mul(1000) as u32,
+        silence_threshold: config.silence_threshold,
         ..VadConfig::default()
     };
     let mut vad = StreamingVad::new(16_000, 1, vad_cfg);
@@ -128,6 +141,8 @@ pub fn run_session(config: StartConfig) -> Result<()> {
     let mut offset = 0usize;
     let mut frame_index = 0u64;
     let mut capture_buffer = [0u8; 8192];
+    let mut capture_ended = false;
+    let mut capture_error = None;
 
     loop {
         if signals::stop_requested() {
@@ -136,6 +151,7 @@ pub fn run_session(config: StartConfig) -> Result<()> {
 
         let read = stdout.read(&mut capture_buffer)?;
         if read == 0 {
+            capture_ended = true;
             break;
         }
 
@@ -156,6 +172,24 @@ pub fn run_session(config: StartConfig) -> Result<()> {
         if offset > frame_bytes * 32 {
             pending.drain(..offset);
             offset = 0;
+        }
+    }
+
+    if capture_ended && !signals::stop_requested() {
+        if let Some(mut child) = child_handle.lock().expect("poisoned capture mutex").take() {
+            let status = child.wait().context("failed while waiting for ffmpeg capture to exit")?;
+            let mut stderr_text = String::new();
+            let _ = stderr.read_to_string(&mut stderr_text);
+            let stderr_text = stderr_text.trim();
+
+            if !status.success() || frame_index == 0 {
+                let detail = if stderr_text.is_empty() {
+                    format!("ffmpeg capture stopped before any audio was received (status: {status})")
+                } else {
+                    stderr_text.to_string()
+                };
+                capture_error = Some(detail);
+            }
         }
     }
 
@@ -181,6 +215,10 @@ pub fn run_session(config: StartConfig) -> Result<()> {
     signals::request_stop();
     let _ = killer.join();
     worker_result?;
+
+    if let Some(detail) = capture_error {
+        return Err(anyhow!("audio capture ended unexpectedly: {detail}"));
+    }
 
     println!("Session finished.");
     println!();
@@ -217,13 +255,22 @@ fn worker_loop(
                             println!("{}", text.trim());
                             println!();
                             let _ = session_writer.append_segment(&segment, &text)?;
+                        } else {
+                            eprintln!(
+                                "Warning: Whisper returned empty text for chunk starting at {}.",
+                                format_duration_ms(segment.start_ms)
+                            );
                         }
                     }
                     Err(err) => {
                         eprintln!(
-                            "Warning: failed to transcribe chunk starting at {}: {err:#}",
+                            "Warning: failed to transcribe chunk starting at {}:",
                             format_duration_ms(segment.start_ms)
                         );
+                        eprintln!("  {err:#}");
+                        for line in format!("{err:#}").lines() {
+                            let _ = session_writer.append_error_line(line);
+                        }
                     }
                 }
             }
@@ -271,7 +318,7 @@ fn human_language_name(language: &str) -> String {
 
 fn backend_name() -> String {
     if cfg!(target_os = "windows") {
-        "windows-wasapi+ffmpeg+whisper.cpp".to_string()
+        "windows-ffmpeg+whisper.cpp".to_string()
     } else {
         "linux-pipewire+pulse+ffmpeg+whisper.cpp".to_string()
     }

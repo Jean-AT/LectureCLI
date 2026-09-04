@@ -49,7 +49,7 @@ unsafe fn install_platform_handler() {
         }
     }
 
-    extern "system" {
+    unsafe extern "system" {
         fn SetConsoleCtrlHandler(handler: HandlerRoutine, add: i32) -> i32;
     }
 

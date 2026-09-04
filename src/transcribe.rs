@@ -15,6 +15,8 @@ pub struct WhisperConfig {
     pub model_path: PathBuf,
     pub language: String,
     pub threads: usize,
+    pub no_speech_threshold: f32,
+    pub keep_artifacts: bool,
 }
 
 pub fn transcribe_wav_file(
@@ -46,6 +48,8 @@ pub fn transcribe_wav_file(
         .arg(&config.language)
         .arg("-t")
         .arg(config.threads.to_string())
+        .arg("-nth")
+        .arg(config.no_speech_threshold.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -57,9 +61,17 @@ pub fn transcribe_wav_file(
         })?;
 
     if !output.status.success() {
+        let mut details = String::from_utf8_lossy(&output.stderr).to_string();
+        if details.is_empty() {
+            details = String::from_utf8_lossy(&output.stdout).to_string();
+        }
         return Err(anyhow!(
-            "whisper transcription failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "whisper transcription failed (status {})\n  whisper binary: {}\n  model: {}\n  input: {}\n  details: {}",
+            output.status,
+            config.whisper_bin.display(),
+            config.model_path.display(),
+            wav_path.display(),
+            details.trim(),
         ));
     }
 
@@ -70,8 +82,10 @@ pub fn transcribe_wav_file(
     };
 
     let cleaned = normalize_whitespace(&text);
-    let _ = fs::remove_file(&output_txt);
-    let _ = fs::remove_file(wav_path);
+    if !config.keep_artifacts {
+        let _ = fs::remove_file(&output_txt);
+        let _ = fs::remove_file(wav_path);
+    }
 
     Ok(cleaned)
 }

@@ -1,6 +1,6 @@
 use std::io;
 use std::path::Path;
-use std::process::{Child, ChildStdout};
+use std::process::{Child, ChildStderr, ChildStdout};
 
 use anyhow::{Context, Result};
 
@@ -9,6 +9,7 @@ use crate::platform::{AudioSource, build_ffmpeg_capture_command};
 pub struct CaptureProcess {
     child: Child,
     pub stdout: ChildStdout,
+    pub stderr: ChildStderr,
 }
 
 impl CaptureProcess {
@@ -17,8 +18,10 @@ impl CaptureProcess {
         source: &AudioSource,
         sample_rate: u32,
         channels: u16,
+        input_gain: f32,
     ) -> Result<Self> {
-        let mut command = build_ffmpeg_capture_command(ffmpeg_bin, source, sample_rate, channels);
+        let mut command =
+            build_ffmpeg_capture_command(ffmpeg_bin, source, sample_rate, channels, input_gain);
         let mut child = command.spawn().with_context(|| {
             format!(
                 "failed to start ffmpeg capture for '{}'",
@@ -29,8 +32,16 @@ impl CaptureProcess {
             .stdout
             .take()
             .ok_or_else(|| anyhow::anyhow!("ffmpeg capture process did not expose stdout"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("ffmpeg capture process did not expose stderr"))?;
 
-        Ok(Self { child, stdout })
+        Ok(Self {
+            child,
+            stdout,
+            stderr,
+        })
     }
 
     pub fn kill_and_wait(&mut self) -> io::Result<()> {
@@ -44,7 +55,7 @@ impl CaptureProcess {
         Ok(())
     }
 
-    pub fn into_parts(self) -> (Child, ChildStdout) {
-        (self.child, self.stdout)
+    pub fn into_parts(self) -> (Child, ChildStdout, ChildStderr) {
+        (self.child, self.stdout, self.stderr)
     }
 }
